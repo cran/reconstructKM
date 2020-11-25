@@ -1,0 +1,167 @@
+---
+title: "reconstructKM Tutoral"
+author: "Ryan Sun"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+library(reconstructKM)
+library(survival)
+library(survminer)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-"
+  #knitr::opts_chunk$set(fig.width=4, fig.height=3)
+)
+```
+
+```{r setup, echo=FALSE}
+library(reconstructKM)
+```
+
+# Introduction
+
+Oftentimes it is of interest to medical clinicians or statisticians to further investigate or reanalyze data from a clinical trial.  For instance, the clinician may want to reinterpret the risks/benefits using different measures (e.g. median survival time or restricted mean survival time instead of the hazard ratio), or the statistician may be interested in using the data for methodological development. 
+
+Most clinical trials with time-to-event data (e.g. testing survival times under two different treatments) published in medical journals (NEJM, JAMA, Journal of Clinical Oncology, etc.) will present Kaplan-Meier curves depicting the survival under multiple treatment arms. reconstructKM allows the researcher to reconstruct the patient-level data (survival time, censoring status, and treatment arm for each individual in the study), using just the figure from the journal (Guyot et al, Biomedical Research Methodology 2012). 
+
+Consider the following example from Effect of Pembrolizumab plus Chemotherapy in Metastatic Non–Small-Cell Lung Cancer (Gandhi et al. NEJM 2018), for which we (Sun, Rich, & Wei) published a Correspondence using data from this package (DOI: 10.1056/NEJMc1808567):
+
+```{r out.width = "700px", echo=FALSE}
+knitr::include_graphics(("pembro_overall.png"))
+```
+
+\newline 
+\newline 
+
+
+There are three main parts to the procedure, which can be performed in ~30 minutes after one is familiar with the package (but may take 2-3 times as long the first time you try). 
+
+1. Use digitizer software (e.g. http://plotdigitizer.sourceforge.net/, freely available as of 11-11-2020) to click the location of event times in the KM plots 
+2. Manually input number at risk information.  
+3. Run the package functions as shown below to reconstruct individual-level data.
+
+We go into more detail below and provide some example screenshots for the NEJM Correspondence example.
+
+# Part 1
+
+a. You will likely first need to calibrate the axes in your digitizer software. That is, you need to click at the minimum and maximum points of the X and Y axes and tell the software what the values are at these points. In our example, these are 0 and 21 for the X axis. The Y axis min/max should always be 0/1 since it is survival. These clicks provide a reference for the software, so it can extrapolate where the rest of your clicks fall.
+
+b. Focusing on a single arm only (e.g. just the blue pembrolizumab arm in the figure above), click at leftmost point of each horizontal line segment, starting at the leftmost horizontal line segment and moving right. You first click should come at the (0,1) coordinate (but don't worry if you can't hit it exactly, you can always manually set it later). See below for examples of first and last clicks. 
+  * As you are clicking, the software should be recording the points as you see in the screenshot.
+  * Sometimes the lines are oddly shaped or very thick, try to click the point that you believe is accurately representing the data at each segment (obviously this is subjective, just try to be consistent).
+
+
+```{r out.width = "700px", echo=FALSE}
+knitr::include_graphics(("pembro_first_clicks.png"))
+knitr::include_graphics(("pembro_last_clicks.png"))
+```
+
+c. Once you are done, there should be an option to export your clicks to Excel or some other file format (in Plot Digitizer, just click "Done" and then copy the numbers to Excel). Save this file.
+
+d. Repeat Steps b-c for all other arms. Save the data for each arm in a separate file. Set the two column names to be "time" and "survival" exactly (in excel, just put these words above the numbers).
+
+e. Inspect your data to make sure that you didn't errantly introduce errors or misclicks. For example, make sure that the survival is decreasing in time. Also, if you didn't manage to click (0,1) exactly, you can change that now for all arms.
+
+# Part 2
+
+For part 2, simply create data.frames in R for each arm that hold the time and number at risk information. You can see we just copied these numbers from the figure above.
+
+```{r NAR example, eval=TRUE, results='show', echo=TRUE, warning=FALSE}
+
+# define the NAR
+pembro_NAR <- data.frame(time=seq(from=0, to=21, by=3), NAR=c(410, 377, 347, 278,  163, 71, 18, 0))
+pbo_NAR <- data.frame(time=seq(from=0, to=21, by=3), NAR=c(206, 183, 149, 104, 59, 25, 8, 0))
+
+```
+
+# Part 3
+
+a. Call format_raw_tabs() function and feed it the NAR table (to the raw_NAR argument) and clicks table (to the raw_surv argument). This will take the raw input and format them into structure necessary for reconstruction. Do this separately for each arm.
+  * In the code example below, I have just loaded a set of example clicks and NAR data, but you will have to open your own files as shown in the comment.
+  * Note the columns are named as directed, and the first row is (0, 1).
+  
+b. Call the KM_reconstruct function and feed it the outcomes from format_raw_tabs(). Specifically, for the aug_NAR argument, feed it the aug_NAR output from format_raw_tabs(), and for the aug_surv argument, feed it the aug_surv output from format_raw_tabs(). Do this separately for each arm.
+
+c. Put the data from all arms together. I do this by creating a data.frame with arm=0 and the data from the placebo arm, creating a data.frame with arm=1 and the data from the pembrolizumab arm, and then binding the rows of these two data.frames together.
+
+```{r reconstruct example, eval=TRUE, results='show', echo=TRUE, warning=FALSE}
+# Here I am loading some example data, but you will have to load your own data, for example by modifying
+# the commented code below (to use your own file structure and file names).
+# setwd("/users/rsun3/desktop")
+# pembro_clicks <- read.csv("pembro_clicks.csv")
+
+# load example data
+data("pembro_clicks")
+data("pembro_NAR")
+data("pbo_clicks")
+data("pbo_NAR")
+
+# call format_raw_tabs() with the clicks table and NAR table
+pembro_aug <- format_raw_tabs(raw_NAR=pembro_NAR,
+                                  raw_surv=pembro_clicks) 
+pbo_aug <- format_raw_tabs(raw_NAR=pbo_NAR,
+                                  raw_surv=pbo_clicks) 
+
+# reconstruct by calling KM_reconstruct()
+pembro_recon <- KM_reconstruct(aug_NAR=pembro_aug$aug_NAR, aug_surv=pembro_aug$aug_surv)
+pbo_recon <- KM_reconstruct(aug_NAR=pbo_aug$aug_NAR, aug_surv=pbo_aug$aug_surv)
+
+# put the treatment and control arms into one dataset
+pembro_IPD <- data.frame(arm=1, time=pembro_recon$IPD_time, status=pembro_recon$IPD_event)
+pbo_IPD <- data.frame(arm=0, time=pbo_recon$IPD_time, status=pbo_recon$IPD_event)
+allIPD <- rbind(pembro_IPD, pbo_IPD)
+
+```
+
+# Additional Analysis
+
+Now you have the reconstructed dataset and can check its veracity, for example by reconstructing the KM plots.
+
+```{r Plot Pembro, eval=TRUE, echo=TRUE,  fig.align="center"}
+# plot
+pembro_KM_fit <- survival::survfit(survival::Surv(time, status) ~ arm, data=allIPD)
+
+pembro_KM <- survminer::ggsurvplot(pembro_KM_fit, data = allIPD, risk.table = TRUE, 
+                        palette=c('red', 'blue'),
+           legend=c(0.35,0.25), legend.title='',legend.labs=c('Pembrolizumab', 'Placebo'),
+           title='Overall Survival',
+           ylab='Survival (%)', xlab='Time (Mo)',
+           tables.y.text=TRUE,
+           tables.y.text.col=FALSE, risk.table.title='Number at Risk', break.time.by=6)
+pembro_KM$plot       
+```
+
+You might also want to fit a Cox model and find the hazard ratio. Note how close the reconstructed estimates are to the original paper estimates:
+
+```{r Cox Pembro, eval=TRUE, results='show', echo=TRUE, warning=FALSE}
+
+pembroCox <- coxph(Surv(time, status) ~ arm, data=allIPD)
+print_cox_outputs(pembroCox)
+
+```
+
+You might want to calculate the restricted mean survival time (RMST) up to 18 months:
+
+```{r RMST Pembro, eval=TRUE, results='show', echo=TRUE, warning=FALSE}
+
+pembroRMST <- nonparam_rmst(dat = allIPD, tau = 18, alpha = 0.05) 
+pembroRMST
+
+```
+
+Or you might want to project the RMST out to five years using a Weibull fit for the data:
+
+```{r RMST weibull Pembro, eval=TRUE, results='show', cache=TRUE, echo=TRUE, warning=FALSE}
+
+weibullFit <- weibull_rmst(num_boots=1000, dat=allIPD, tau=60, alpha=0.05, find_pval=FALSE, seed=NULL)
+weibullFit$rmst_df
+```
+
+
